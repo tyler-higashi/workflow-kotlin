@@ -111,8 +111,13 @@ public fun <PropsT, StateT, OutputT> WorkflowAction<PropsT, StateT, OutputT>.app
   return Pair(updater.state, updater.maybeOutput)
 }
 
+public sealed interface ActionProcessingResult
+
+public object PropsUpdated : ActionProcessingResult
+public object FrameTimeout : ActionProcessingResult
+
 /** Wrapper around a potentially-nullable [OutputT] value. */
-public class WorkflowOutput<out OutputT>(public val value: OutputT) {
+public class WorkflowOutput<out OutputT>(public val value: OutputT) : ActionProcessingResult {
   override fun toString(): String = "WorkflowOutput($value)"
 
   override fun equals(other: Any?): Boolean = when {

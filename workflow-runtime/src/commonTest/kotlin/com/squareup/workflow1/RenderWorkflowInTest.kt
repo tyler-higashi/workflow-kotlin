@@ -21,6 +21,7 @@ import kotlinx.coroutines.plus
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.runCurrent
 import okio.ByteString
@@ -46,27 +47,60 @@ class RenderWorkflowInTest {
    */
   private val testScope = TestScope(UnconfinedTestDispatcher())
 
-  @Test fun `initial rendering is calculated synchronously`() {
+  @Test fun `initial rendering is calculated synchronously baseline`() =
+    initialRenderingIsCalculatedSynchronously(processMultipleActions = false)
+
+  @Test fun `initial rendering is calculated synchronously multiple actions`() =
+    initialRenderingIsCalculatedSynchronously(processMultipleActions = true)
+
+  private fun initialRenderingIsCalculatedSynchronously(processMultipleActions: Boolean) {
     val props = MutableStateFlow("foo")
     val workflow = Workflow.stateless<String, Nothing, String> { "props: $it" }
     // Don't allow the workflow runtime to actually start.
 
-    val renderings = renderWorkflowIn(workflow, pausedTestScope, props) {}
+    val renderings = renderWorkflowIn(
+      workflow = workflow,
+      scope = pausedTestScope,
+      props = props,
+      runtimeConfig = RuntimeConfig(processMultipleActions)
+    ) {}
     assertEquals("props: foo", renderings.value.rendering)
   }
 
-  @Test fun `initial rendering is calculated when scope cancelled before start`() {
+  @Test fun `initial rendering is calculated when scope cancelled before start baseline`() =
+    initialRenderingIsCalculatedWhenScopeCancelledBeforeStart(processMultipleActions = false)
+
+  @Test fun `initial rendering is calculated when scope cancelled before start multiple actions`() =
+    initialRenderingIsCalculatedWhenScopeCancelledBeforeStart(processMultipleActions = true)
+
+  private fun initialRenderingIsCalculatedWhenScopeCancelledBeforeStart(
+    processMultipleActions: Boolean
+  ) {
     val props = MutableStateFlow("foo")
     val workflow = Workflow.stateless<String, Nothing, String> { "props: $it" }
 
     pausedTestScope.cancel()
-    val renderings = renderWorkflowIn(workflow, pausedTestScope, props) {}
+    val renderings = renderWorkflowIn(
+      workflow = workflow,
+      scope = pausedTestScope,
+      props = props,
+      runtimeConfig = RuntimeConfig(processMultipleActions)
+    ) {}
     assertEquals("props: foo", renderings.value.rendering)
   }
 
+  /* ktlint-disable max-line-length */
   @Test
-  // ktlint-disable max-line-length
-  fun `side effects from initial rendering in root workflow are never started when scope cancelled before start`() { // ktlint-disable max-line-length
+  fun `side effects from initial rendering in root workflow are never started when scope cancelled before start baseline`() =
+    sideEffectsFromInitialRenderingInRootNeverStartedScopeCancelled(processMultipleActions = false)
+
+  @Test
+  fun `side effects from initial rendering in root workflow are never started when scope cancelled before start multiple actions`() =
+    sideEffectsFromInitialRenderingInRootNeverStartedScopeCancelled(processMultipleActions = true)
+
+  private fun sideEffectsFromInitialRenderingInRootNeverStartedScopeCancelled(
+    processMultipleActions: Boolean
+  ) {
     var sideEffectWasRan = false
     val workflow = Workflow.stateless<Unit, Nothing, Unit> {
       runningSideEffect("test") {
@@ -75,14 +109,28 @@ class RenderWorkflowInTest {
     }
 
     testScope.cancel()
-    renderWorkflowIn(workflow, testScope, MutableStateFlow(Unit)) {}
+    renderWorkflowIn(
+      workflow,
+      testScope,
+      MutableStateFlow(Unit),
+      runtimeConfig = RuntimeConfig(processMultipleActions)
+    ) {}
     testScope.advanceUntilIdle()
 
     assertFalse(sideEffectWasRan)
   }
 
   @Test
-  fun `side effects from initial rendering in non-root workflow are never started when scope cancelled before start`() { // ktlint-disable max-line-length
+  fun `side effects from initial rendering in non-root workflow are never started when scope cancelled before start baseline`() =
+    sideEffectsFromInitialRenderingNonRootNeverStartedScopeCancelled(processMultipleActions = false)
+
+  @Test
+  fun `side effects from initial rendering in non-root workflow are never started when scope cancelled before start multiple actions`() =
+    sideEffectsFromInitialRenderingNonRootNeverStartedScopeCancelled(processMultipleActions = true)
+
+  private fun sideEffectsFromInitialRenderingNonRootNeverStartedScopeCancelled(
+    processMultipleActions: Boolean
+  ) {
     var sideEffectWasRan = false
     val childWorkflow = Workflow.stateless<Unit, Nothing, Unit> {
       runningSideEffect("test") {
@@ -94,16 +142,33 @@ class RenderWorkflowInTest {
     }
 
     testScope.cancel()
-    renderWorkflowIn(workflow, testScope, MutableStateFlow(Unit)) {}
+    renderWorkflowIn(
+      workflow = workflow,
+      scope = testScope,
+      props = MutableStateFlow(Unit),
+      runtimeConfig = RuntimeConfig(processMultipleActions)
+    ) {}
     testScope.advanceUntilIdle()
 
     assertFalse(sideEffectWasRan)
   }
+  /* ktlint-enable max-line-length */
 
-  @Test fun `new renderings are emitted on update`() {
+  @Test fun `new renderings are emitted on update baseline`() =
+    newRenderingsAreEmittedOnUpdate(processMultipleActions = false)
+
+  @Test fun `new renderings are emitted on update multiple actions`() =
+    newRenderingsAreEmittedOnUpdate(processMultipleActions = true)
+
+  private fun newRenderingsAreEmittedOnUpdate(processMultipleActions: Boolean) {
     val props = MutableStateFlow("foo")
     val workflow = Workflow.stateless<String, Nothing, String> { "props: $it" }
-    val renderings = renderWorkflowIn(workflow, testScope, props) {}
+    val renderings = renderWorkflowIn(
+      workflow = workflow,
+      scope = testScope,
+      props = props,
+      runtimeConfig = RuntimeConfig(processMultipleActions)
+    ) {}
 
     assertEquals("props: foo", renderings.value.rendering)
 
@@ -112,7 +177,33 @@ class RenderWorkflowInTest {
     assertEquals("props: bar", renderings.value.rendering)
   }
 
-  @Test fun `saves to and restores from snapshot`() {
+  @Test fun `saves to and restores from snapshot baseline`() = savesToAndRestoresFromSnapshot(
+    processMultipleActionsFirst = false,
+    processMultipleActionsSecond = false
+  )
+
+  @Test fun `saves to and restores from snapshot multiple actions`() =
+    savesToAndRestoresFromSnapshot(
+      processMultipleActionsFirst = true,
+      processMultipleActionsSecond = true
+    )
+
+  @Test fun `saves to baseline and restores to multiple actions RuntimeConfig`() =
+    savesToAndRestoresFromSnapshot(
+      processMultipleActionsFirst = false,
+      processMultipleActionsSecond = true
+    )
+
+  @Test fun `saves to multiple actions and restores to baseline RuntimeConfig`() =
+    savesToAndRestoresFromSnapshot(
+      processMultipleActionsFirst = true,
+      processMultipleActionsSecond = false
+    )
+
+  private fun savesToAndRestoresFromSnapshot(
+    processMultipleActionsFirst: Boolean,
+    processMultipleActionsSecond: Boolean
+  ) {
     val workflow = Workflow.stateful<Unit, String, Nothing, Pair<String, (String) -> Unit>>(
       initialState = { _, snapshot ->
         snapshot?.bytes?.parse { it.readUtf8WithLength() } ?: "initial state"
@@ -128,7 +219,12 @@ class RenderWorkflowInTest {
       }
     )
     val props = MutableStateFlow(Unit)
-    val renderings = renderWorkflowIn(workflow, testScope, props) {}
+    val renderings = renderWorkflowIn(
+      workflow = workflow,
+      scope = testScope,
+      props = props,
+      runtimeConfig = RuntimeConfig(processMultipleActionsFirst)
+    ) {}
 
     // Interact with the workflow to change the state.
     renderings.value.rendering.let { (state, updateState) ->
@@ -136,6 +232,10 @@ class RenderWorkflowInTest {
       updateState("updated state")
     }
 
+    if (processMultipleActionsFirst) {
+      // Get past frame timeout to ensure snapshot saved.
+      testScope.advanceTimeBy(RuntimeConfig.DEFAULT_CONFIG.frameTimeoutMs + 1)
+    }
     val snapshot = renderings.value.let { (rendering, snapshot) ->
       val (state, updateState) = rendering
       assertEquals("updated state", state)
@@ -146,12 +246,22 @@ class RenderWorkflowInTest {
     // Create a new scope to launch a second runtime to restore.
     val restoreScope = TestScope()
     val restoredRenderings =
-      renderWorkflowIn(workflow, restoreScope, props, initialSnapshot = snapshot) {}
+      renderWorkflowIn(
+        workflow = workflow,
+        scope = restoreScope,
+        props = props,
+        initialSnapshot = snapshot,
+        runtimeConfig = RuntimeConfig(processMultipleActionsSecond)
+      ) {}
     assertEquals("updated state", restoredRenderings.value.rendering.first)
   }
 
   // https://github.com/square/workflow-kotlin/issues/223
-  @Test fun `snapshots are lazy`() {
+  @Test fun `snapshots are lazy baseline`() = snapshotsAreLazy(processMultipleActions = false)
+  @Test fun `snapshots are lazy multiple actions`() =
+    snapshotsAreLazy(processMultipleActions = true)
+
+  private fun snapshotsAreLazy(processMultipleActions: Boolean) {
     lateinit var sink: Sink<String>
     var snapped = false
 
@@ -169,17 +279,32 @@ class RenderWorkflowInTest {
       }
     )
     val props = MutableStateFlow(Unit)
-    val renderings = renderWorkflowIn(workflow, testScope, props) {}
+    val renderings = renderWorkflowIn(
+      workflow = workflow,
+      scope = testScope,
+      props = props,
+      runtimeConfig = RuntimeConfig(processMultipleActions)
+    ) {}
 
     val emitted = mutableListOf<RenderingAndSnapshot<String>>()
     val scope = CoroutineScope(Unconfined)
     scope.launch {
-      renderings.collect {
-        emitted += it
-      }
+      renderings.collect { emitted += it }
     }
     sink.send("unchanging state")
+
+    if (processMultipleActions) {
+      // Get past frame timeout to ensure snapshot saved.
+      testScope.advanceTimeBy(RuntimeConfig.DEFAULT_CONFIG.frameTimeoutMs + 1)
+    }
+
     sink.send("unchanging state")
+
+    if (processMultipleActions) {
+      // Get past frame timeout to ensure snapshot saved.
+      testScope.advanceTimeBy(RuntimeConfig.DEFAULT_CONFIG.frameTimeoutMs + 1)
+    }
+
     scope.cancel()
 
     assertFalse(snapped)
@@ -187,7 +312,13 @@ class RenderWorkflowInTest {
     assertNotSame(emitted[1].snapshot.workflowSnapshot, emitted[2].snapshot.workflowSnapshot)
   }
 
-  @Test fun `onOutput called when output emitted`() {
+  @Test fun `onOutput called when output emitted baseline`() =
+    onOutputCalledWhenOutputEmitted(processMultipleActions = false)
+
+  @Test fun `onOutput called when output emitted multiple actions`() =
+    onOutputCalledWhenOutputEmitted(processMultipleActions = true)
+
+  private fun onOutputCalledWhenOutputEmitted(processMultipleActions: Boolean) {
     val trigger = Channel<String>()
     val workflow = Workflow.stateless<Unit, String, Unit> {
       runningWorker(
@@ -196,7 +327,12 @@ class RenderWorkflowInTest {
       ) { action { setOutput(it) } }
     }
     val receivedOutputs = mutableListOf<String>()
-    renderWorkflowIn(workflow, testScope, MutableStateFlow(Unit)) {
+    renderWorkflowIn(
+      workflow = workflow,
+      scope = testScope,
+      props = MutableStateFlow(Unit),
+      runtimeConfig = RuntimeConfig(processMultipleActions)
+    ) {
       receivedOutputs += it
     }
     assertTrue(receivedOutputs.isEmpty())
@@ -208,11 +344,22 @@ class RenderWorkflowInTest {
     assertEquals(listOf("foo", "bar"), receivedOutputs)
   }
 
-  @Test fun `onOutput is not called when no output emitted`() {
+  @Test fun `onOutput is not called when no output emitted baseline`() =
+    onOutputIsNotCalledWhenNoOutputEmitted(processMultipleActions = false)
+
+  @Test fun `onOutput is not called when no output emitted multiple actions`() =
+    onOutputIsNotCalledWhenNoOutputEmitted(processMultipleActions = true)
+
+  private fun onOutputIsNotCalledWhenNoOutputEmitted(processMultipleActions: Boolean) {
     val workflow = Workflow.stateless<Int, String, Int> { props -> props }
     var onOutputCalls = 0
     val props = MutableStateFlow(0)
-    val renderings = renderWorkflowIn(workflow, testScope, props) { onOutputCalls++ }
+    val renderings = renderWorkflowIn(
+      workflow = workflow,
+      scope = testScope,
+      props = props,
+      runtimeConfig = RuntimeConfig(processMultipleActions)
+    ) { onOutputCalls++ }
     assertEquals(0, renderings.value.rendering)
     assertEquals(0, onOutputCalls)
 
@@ -230,18 +377,44 @@ class RenderWorkflowInTest {
    * doesn't implicitly cancel the scope. If it did, the reception would be reported twice: once to
    * the caller, and once to the scope.
    */
-  @Test fun `exception from initial render doesn't fail parent scope`() {
+  @Test fun `exception from initial render doesn't fail parent scope baseline`() =
+    exceptionFromInitialRenderDoesNotFailParentScope(processMultipleActions = false)
+
+  @Test fun `exception from initial render doesn't fail parent scope multiple actions`() =
+    exceptionFromInitialRenderDoesNotFailParentScope(processMultipleActions = true)
+
+  private fun exceptionFromInitialRenderDoesNotFailParentScope(processMultipleActions: Boolean) {
     val workflow = Workflow.stateless<Unit, Nothing, Unit> {
       throw ExpectedException()
     }
     assertFailsWith<ExpectedException> {
-      renderWorkflowIn(workflow, testScope, MutableStateFlow(Unit)) {}
+      renderWorkflowIn(
+        workflow = workflow,
+        scope = testScope,
+        props = MutableStateFlow(Unit),
+        runtimeConfig = RuntimeConfig(processMultipleActions)
+      ) {}
     }
     assertTrue(testScope.isActive)
   }
 
+  /* ktlint-disable max-line-length */
+
   @Test
-  fun `side effects from initial rendering in root workflow are never started when initial render of root workflow fails`() { // ktlint-disable max-line-length
+  fun `side effects from initial rendering in root workflow are never started when initial render of root workflow fails baseline`() =
+    sideEffectsFromInitialRenderingInRootWorkflowNeverStartedWhenRootRenderingFails(
+      processMultipleActions = false
+    )
+
+  @Test
+  fun `side effects from initial rendering in root workflow are never started when initial render of root workflow fails multiple actions`() =
+    sideEffectsFromInitialRenderingInRootWorkflowNeverStartedWhenRootRenderingFails(
+      processMultipleActions = true
+    )
+
+  private fun sideEffectsFromInitialRenderingInRootWorkflowNeverStartedWhenRootRenderingFails(
+    processMultipleActions: Boolean
+  ) {
     var sideEffectWasRan = false
     val workflow = Workflow.stateless<Unit, Nothing, Unit> {
       runningSideEffect("test") {
@@ -251,13 +424,31 @@ class RenderWorkflowInTest {
     }
 
     assertFailsWith<ExpectedException> {
-      renderWorkflowIn(workflow, testScope, MutableStateFlow(Unit)) {}
+      renderWorkflowIn(
+        workflow = workflow,
+        scope = testScope,
+        props = MutableStateFlow(Unit),
+        runtimeConfig = RuntimeConfig(processMultipleActions)
+      ) {}
     }
     assertFalse(sideEffectWasRan)
   }
 
   @Test
-  fun `side effects from initial rendering in non-root workflow are cancelled when initial render of root workflow fails`() { // ktlint-disable max-line-length
+  fun `side effects from initial rendering in non-root workflow are cancelled when initial render of root workflow fails baseline`() =
+    sideEffectsFromInitialRenderingInNonRootWorkflowCancelledWhenRootRenderingFails(
+      processMultipleActions = false
+    )
+
+  @Test
+  fun `side effects from initial rendering in non-root workflow are cancelled when initial render of root workflow fails multiple actions`() =
+    sideEffectsFromInitialRenderingInNonRootWorkflowCancelledWhenRootRenderingFails(
+      processMultipleActions = true
+    )
+
+  private fun sideEffectsFromInitialRenderingInNonRootWorkflowCancelledWhenRootRenderingFails(
+    processMultipleActions: Boolean
+  ) {
     var sideEffectWasRan = false
     var cancellationException: Throwable? = null
     val childWorkflow = Workflow.stateless<Unit, Nothing, Unit> {
@@ -274,7 +465,12 @@ class RenderWorkflowInTest {
     }
 
     assertFailsWith<ExpectedException> {
-      renderWorkflowIn(workflow, testScope, MutableStateFlow(Unit)) {}
+      renderWorkflowIn(
+        workflow = workflow,
+        scope = testScope,
+        props = MutableStateFlow(Unit),
+        runtimeConfig = RuntimeConfig(processMultipleActions)
+      ) {}
     }
     assertTrue(sideEffectWasRan)
     assertNotNull(cancellationException)
@@ -284,7 +480,20 @@ class RenderWorkflowInTest {
   }
 
   @Test
-  fun `side effects from initial rendering in non-root workflow are never started when initial render of non-root workflow fails`() { // ktlint-disable max-line-length
+  fun `side effects from initial rendering in non-root workflow are never started when initial render of non-root workflow fails baseline`() =
+    sideEffectsFromInitialRenderingInNonRootWorkflowNeverStartedWhenNonRootRenderingFails(
+      processMultipleActions = false
+    )
+
+  @Test
+  fun `side effects from initial rendering in non-root workflow are never started when initial render of non-root workflow fails multiple actions`() =
+    sideEffectsFromInitialRenderingInNonRootWorkflowNeverStartedWhenNonRootRenderingFails(
+      processMultipleActions = true
+    )
+
+  private fun sideEffectsFromInitialRenderingInNonRootWorkflowNeverStartedWhenNonRootRenderingFails(
+    processMultipleActions: Boolean
+  ) {
     var sideEffectWasRan = false
     val childWorkflow = Workflow.stateless<Unit, Nothing, Unit> {
       runningSideEffect("test") {
@@ -297,12 +506,24 @@ class RenderWorkflowInTest {
     }
 
     assertFailsWith<ExpectedException> {
-      renderWorkflowIn(workflow, testScope, MutableStateFlow(Unit)) {}
+      renderWorkflowIn(
+        workflow = workflow,
+        scope = testScope,
+        props = MutableStateFlow(Unit),
+        runtimeConfig = RuntimeConfig(processMultipleActions)
+      ) {}
     }
     assertFalse(sideEffectWasRan)
   }
+  /* ktlint-enable max-line-length */
 
-  @Test fun `exception from non-initial render fails parent scope`() {
+  @Test fun `exception from non-initial render fails parent scope baseline`() =
+    exceptionFromNonInitialRenderFailsParentScope(processMultipleActions = false)
+
+  @Test fun `exception from non-initial render fails parent scope multiple actions`() =
+    exceptionFromNonInitialRenderFailsParentScope(processMultipleActions = false)
+
+  private fun exceptionFromNonInitialRenderFailsParentScope(processMultipleActions: Boolean) {
     val trigger = CompletableDeferred<Unit>()
     // Throws an exception when trigger is completed.
     val workflow = Workflow.stateful<Unit, Boolean, Nothing, Unit>(
@@ -314,7 +535,12 @@ class RenderWorkflowInTest {
         }
       }
     )
-    renderWorkflowIn(workflow, testScope, MutableStateFlow(Unit)) {}
+    renderWorkflowIn(
+      workflow = workflow,
+      scope = testScope,
+      props = MutableStateFlow(Unit),
+      runtimeConfig = RuntimeConfig(processMultipleActions)
+    ) {}
 
     assertTrue(testScope.isActive)
 
@@ -322,7 +548,13 @@ class RenderWorkflowInTest {
     assertFalse(testScope.isActive)
   }
 
-  @Test fun `exception from action fails parent scope`() {
+  @Test fun `exception from action fails parent scope baseline`() =
+    exceptionFromActionFailsParentScope(processMultipleActions = false)
+
+  @Test fun `exception from action fails parent scope multiple actions`() =
+    exceptionFromActionFailsParentScope(processMultipleActions = true)
+
+  private fun exceptionFromActionFailsParentScope(processMultipleActions: Boolean) {
     val trigger = CompletableDeferred<Unit>()
     // Throws an exception when trigger is completed.
     val workflow = Workflow.stateless<Unit, Nothing, Unit> {
@@ -332,7 +564,12 @@ class RenderWorkflowInTest {
         }
       }
     }
-    renderWorkflowIn(workflow, testScope, MutableStateFlow(Unit)) {}
+    renderWorkflowIn(
+      workflow = workflow,
+      scope = testScope,
+      props = MutableStateFlow(Unit),
+      runtimeConfig = RuntimeConfig(processMultipleActions)
+    ) {}
 
     assertTrue(testScope.isActive)
 
@@ -340,7 +577,13 @@ class RenderWorkflowInTest {
     assertFalse(testScope.isActive)
   }
 
-  @Test fun `cancelling scope cancels runtime`() {
+  @Test fun `cancelling scope cancels runtime baseline`() =
+    cancellingScopeCancelsRuntime(processMultipleActions = false)
+
+  @Test fun `cancelling scope cancels runtime multiple actions`() =
+    cancellingScopeCancelsRuntime(processMultipleActions = true)
+
+  private fun cancellingScopeCancelsRuntime(processMultipleActions: Boolean) {
     var cancellationException: Throwable? = null
     val workflow = Workflow.stateless<Unit, Nothing, Unit> {
       runningSideEffect(key = "test1") {
@@ -349,7 +592,12 @@ class RenderWorkflowInTest {
         }
       }
     }
-    renderWorkflowIn(workflow, testScope, MutableStateFlow(Unit)) {}
+    renderWorkflowIn(
+      workflow = workflow,
+      scope = testScope,
+      props = MutableStateFlow(Unit),
+      runtimeConfig = RuntimeConfig(processMultipleActions)
+    ) {}
     assertNull(cancellationException)
     assertTrue(testScope.isActive)
 
@@ -358,7 +606,16 @@ class RenderWorkflowInTest {
     assertNull(cancellationException!!.cause)
   }
 
-  @Test fun `cancelling scope in action cancels runtime and does not render again`() {
+  @Test fun `cancelling scope in action cancels runtime and does not render again baseline`() =
+    cancellingScopeInActionCancelsRuntimeAndDoesNotRenderAgain(processMultipleActions = false)
+
+  @Test
+  fun `cancelling scope in action cancels runtime and does not render again multiple actions`() =
+    cancellingScopeInActionCancelsRuntimeAndDoesNotRenderAgain(processMultipleActions = true)
+
+  private fun cancellingScopeInActionCancelsRuntimeAndDoesNotRenderAgain(
+    processMultipleActions: Boolean
+  ) {
     val trigger = CompletableDeferred<Unit>()
     var renderCount = 0
     val workflow = Workflow.stateless<Unit, Nothing, Unit> {
@@ -369,7 +626,12 @@ class RenderWorkflowInTest {
         }
       }
     }
-    renderWorkflowIn(workflow, testScope, MutableStateFlow(Unit)) {}
+    renderWorkflowIn(
+      workflow = workflow,
+      scope = testScope,
+      props = MutableStateFlow(Unit),
+      runtimeConfig = RuntimeConfig(processMultipleActions)
+    ) {}
     assertTrue(testScope.isActive)
     assertTrue(renderCount == 1)
 
@@ -379,7 +641,13 @@ class RenderWorkflowInTest {
     assertEquals(1, renderCount, "Should not render after CoroutineScope is canceled.")
   }
 
-  @Test fun `failing scope cancels runtime`() {
+  @Test fun `failing scope cancels runtime baseline`() =
+    failingScopeCancelsRuntime(processMultipleActions = false)
+
+  @Test fun `failing scope cancels runtime multiple actions`() =
+    failingScopeCancelsRuntime(processMultipleActions = true)
+
+  private fun failingScopeCancelsRuntime(processMultipleActions: Boolean) {
     var cancellationException: Throwable? = null
     val workflow = Workflow.stateless<Unit, Nothing, Unit> {
       runningSideEffect(key = "failing") {
@@ -388,7 +656,12 @@ class RenderWorkflowInTest {
         }
       }
     }
-    renderWorkflowIn(workflow, testScope, MutableStateFlow(Unit)) {}
+    renderWorkflowIn(
+      workflow = workflow,
+      scope = testScope,
+      props = MutableStateFlow(Unit),
+      runtimeConfig = RuntimeConfig(processMultipleActions)
+    ) {}
     assertNull(cancellationException)
     assertTrue(testScope.isActive)
 
@@ -397,9 +670,20 @@ class RenderWorkflowInTest {
     assertTrue(cancellationException!!.cause is ExpectedException)
   }
 
-  @Test fun `error from renderings collector doesn't fail parent scope`() {
+  @Test fun `error from renderings collector doesn't fail parent scope baseline`() =
+    errorFromRenderingsCollectorDoesNotFailParentScope(processMultipleActions = false)
+
+  @Test fun `error from renderings collector doesn't fail parent scope multiple actions`() =
+    errorFromRenderingsCollectorDoesNotFailParentScope(processMultipleActions = true)
+
+  private fun errorFromRenderingsCollectorDoesNotFailParentScope(processMultipleActions: Boolean) {
     val workflow = Workflow.stateless<Unit, Nothing, Unit> {}
-    val renderings = renderWorkflowIn(workflow, testScope, MutableStateFlow(Unit)) {}
+    val renderings = renderWorkflowIn(
+      workflow = workflow,
+      scope = testScope,
+      props = MutableStateFlow(Unit),
+      runtimeConfig = RuntimeConfig(processMultipleActions)
+    ) {}
 
     // Collect in separate scope so we actually test that the parent scope is failed when it's
     // different from the collecting scope.
@@ -411,7 +695,13 @@ class RenderWorkflowInTest {
     assertFalse(collectScope.isActive)
   }
 
-  @Test fun `error from renderings collector cancels runtime`() {
+  @Test fun `error from renderings collector cancels runtime baseline`() =
+    errorFromRenderingsCollectorCancelsRuntime(processMultipleActions = false)
+
+  @Test fun `error from renderings collector cancels runtime multiple actions`() =
+    errorFromRenderingsCollectorCancelsRuntime(processMultipleActions = true)
+
+  private fun errorFromRenderingsCollectorCancelsRuntime(processMultipleActions: Boolean) {
     var cancellationException: Throwable? = null
     val workflow = Workflow.stateless<Unit, Nothing, Unit> {
       runningSideEffect(key = "test") {
@@ -422,7 +712,12 @@ class RenderWorkflowInTest {
         }
       }
     }
-    val renderings = renderWorkflowIn(workflow, pausedTestScope, MutableStateFlow(Unit)) {}
+    val renderings = renderWorkflowIn(
+      workflow = workflow,
+      scope = pausedTestScope,
+      props = MutableStateFlow(Unit),
+      runtimeConfig = RuntimeConfig(processMultipleActions)
+    ) {}
 
     pausedTestScope.launch {
       renderings.collect { throw ExpectedException() }
@@ -434,13 +729,24 @@ class RenderWorkflowInTest {
     assertTrue(cancellationException!!.cause is ExpectedException)
   }
 
-  @Test fun `exception from onOutput fails parent scope`() {
+  @Test fun `exception from onOutput fails parent scope baseline`() =
+    exceptionFromOnOutputFailsParentScope(processMultipleActions = false)
+
+  @Test fun `exception from onOutput fails parent scope multiple actions`() =
+    exceptionFromOnOutputFailsParentScope(processMultipleActions = true)
+
+  private fun exceptionFromOnOutputFailsParentScope(processMultipleActions: Boolean) {
     val trigger = CompletableDeferred<Unit>()
     // Emits a Unit when trigger is completed.
     val workflow = Workflow.stateless<Unit, Unit, Unit> {
       runningWorker(Worker.from { trigger.await() }) { action { setOutput(Unit) } }
     }
-    renderWorkflowIn(workflow, pausedTestScope, MutableStateFlow(Unit)) {
+    renderWorkflowIn(
+      workflow = workflow,
+      scope = pausedTestScope,
+      props = MutableStateFlow(Unit),
+      runtimeConfig = RuntimeConfig(processMultipleActions)
+    ) {
       throw ExpectedException()
     }
     assertTrue(pausedTestScope.isActive)
@@ -452,7 +758,13 @@ class RenderWorkflowInTest {
     assertFalse(pausedTestScope.isActive)
   }
 
-  @Test fun `output is emitted before next render pass`() {
+  @Test fun `output is emitted before next render pass baseline`() =
+    outputIsEmittedBeforeNextRenderPass(processMultipleActions = false)
+
+  @Test fun `output is emitted before next render pass multiple actions`() =
+    outputIsEmittedBeforeNextRenderPass(processMultipleActions = true)
+
+  private fun outputIsEmittedBeforeNextRenderPass(processMultipleActions: Boolean) {
     val outputTrigger = CompletableDeferred<String>()
     // A workflow whose state and rendering is the last output that it emitted.
     val workflow = Workflow.stateful<Unit, String, String, String>(
@@ -470,7 +782,11 @@ class RenderWorkflowInTest {
     val events = mutableListOf<String>()
 
     renderWorkflowIn(
-      workflow, pausedTestScope, MutableStateFlow(Unit), onOutput = { events += "output($it)" }
+      workflow = workflow,
+      scope = pausedTestScope,
+      props = MutableStateFlow(Unit),
+      runtimeConfig = RuntimeConfig(processMultipleActions),
+      onOutput = { events += "output($it)" }
     )
       .onEach { events += "rendering(${it.rendering})" }
       .launchIn(pausedTestScope)
@@ -490,7 +806,13 @@ class RenderWorkflowInTest {
   }
 
   // https://github.com/square/workflow-kotlin/issues/224
-  @Test fun `exceptions from Snapshots don't fail runtime`() {
+  @Test fun `exceptions from Snapshots don't fail runtime baseline`() =
+    exceptionsFromSnapshotsDoNotFailRuntime(processMultipleActions = false)
+
+  @Test fun `exceptions from Snapshots don't fail runtime multiple actions`() =
+    exceptionsFromSnapshotsDoNotFailRuntime(processMultipleActions = true)
+
+  private fun exceptionsFromSnapshotsDoNotFailRuntime(processMultipleActions: Boolean) {
     val workflow = Workflow.stateful<Int, Unit, Nothing, Unit>(
       snapshot = {
         Snapshot.of {
@@ -505,7 +827,12 @@ class RenderWorkflowInTest {
     val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
       uncaughtExceptions += throwable
     }
-    val snapshot = renderWorkflowIn(workflow, testScope + exceptionHandler, props) {}
+    val snapshot = renderWorkflowIn(
+      workflow = workflow,
+      scope = testScope + exceptionHandler,
+      props = props,
+      runtimeConfig = RuntimeConfig(processMultipleActions)
+    ) {}
       .value
       .snapshot
 
@@ -517,7 +844,15 @@ class RenderWorkflowInTest {
   }
 
   // https://github.com/square/workflow-kotlin/issues/224
-  @Test fun `exceptions from renderings' equals methods don't fail runtime`() {
+  @Test fun `exceptions from renderings' equals methods don't fail runtime baseline`() =
+    exceptionsFromRenderingsEqualsMethodsDoNotFailRuntime(processMultipleActions = false)
+
+  @Test fun `exceptions from renderings' equals methods don't fail runtime multiple actions`() =
+    exceptionsFromRenderingsEqualsMethodsDoNotFailRuntime(processMultipleActions = true)
+
+  private fun exceptionsFromRenderingsEqualsMethodsDoNotFailRuntime(
+    processMultipleActions: Boolean
+  ) {
     @Suppress("EqualsOrHashCode", "unused")
     class FailRendering(val value: Int) {
       override fun equals(other: Any?): Boolean {
@@ -533,7 +868,12 @@ class RenderWorkflowInTest {
     val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
       uncaughtExceptions += throwable
     }
-    val ras = renderWorkflowIn(workflow, testScope + exceptionHandler, props) {}
+    val ras = renderWorkflowIn(
+      workflow = workflow,
+      scope = testScope + exceptionHandler,
+      props = props,
+      runtimeConfig = RuntimeConfig(processMultipleActions)
+    ) {}
     val renderings = ras.map { it.rendering }
       .produceIn(testScope)
 
@@ -546,7 +886,15 @@ class RenderWorkflowInTest {
   }
 
   // https://github.com/square/workflow-kotlin/issues/224
-  @Test fun `exceptions from renderings' hashCode methods don't fail runtime`() {
+  @Test fun `exceptions from renderings' hashCode methods don't fail runtime baseline`() =
+    exceptionsFromRenderingsHashCodeMethodsDoNotFailRuntime(processMultipleActions = false)
+
+  @Test fun `exceptions from renderings' hashCode methods don't fail runtime multiple actions`() =
+    exceptionsFromRenderingsHashCodeMethodsDoNotFailRuntime(processMultipleActions = true)
+
+  private fun exceptionsFromRenderingsHashCodeMethodsDoNotFailRuntime(
+    processMultipleActions: Boolean
+  ) {
     @Suppress("EqualsOrHashCode")
     data class FailRendering(val value: Int) {
       override fun hashCode(): Int {
@@ -562,7 +910,12 @@ class RenderWorkflowInTest {
     val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
       uncaughtExceptions += throwable
     }
-    val ras = renderWorkflowIn(workflow, testScope + exceptionHandler, props) {}
+    val ras = renderWorkflowIn(
+      workflow = workflow,
+      scope = testScope + exceptionHandler,
+      props = props,
+      runtimeConfig = RuntimeConfig(processMultipleActions)
+    ) {}
     val renderings = ras.map { it.rendering }
       .produceIn(testScope)
 

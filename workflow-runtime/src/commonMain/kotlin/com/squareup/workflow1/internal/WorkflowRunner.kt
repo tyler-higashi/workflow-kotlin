@@ -1,6 +1,10 @@
 package com.squareup.workflow1.internal
 
+import com.squareup.workflow1.ActionProcessingResult
+import com.squareup.workflow1.FrameTimeout
+import com.squareup.workflow1.PropsUpdated
 import com.squareup.workflow1.RenderingAndSnapshot
+import com.squareup.workflow1.RuntimeConfig
 import com.squareup.workflow1.TreeSnapshot
 import com.squareup.workflow1.Workflow
 import com.squareup.workflow1.WorkflowInterceptor
@@ -12,6 +16,7 @@ import kotlinx.coroutines.FlowPreview
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.dropWhile
 import kotlinx.coroutines.flow.produceIn
+import kotlinx.coroutines.selects.SelectBuilder
 import kotlinx.coroutines.selects.select
 
 @OptIn(ExperimentalCoroutinesApi::class)
@@ -20,7 +25,8 @@ internal class WorkflowRunner<PropsT, OutputT, RenderingT>(
   protoWorkflow: Workflow<PropsT, OutputT, RenderingT>,
   props: StateFlow<PropsT>,
   snapshot: TreeSnapshot?,
-  interceptor: WorkflowInterceptor
+  interceptor: WorkflowInterceptor,
+  private val runtimeConfig: RuntimeConfig
 ) {
   private val workflow = protoWorkflow.asStatefulWorkflow()
   private val idCounter = IdCounter()
@@ -53,8 +59,8 @@ internal class WorkflowRunner<PropsT, OutputT, RenderingT>(
   /**
    * Perform a render pass and a snapshot pass and return the results.
    *
-   * This method must be called before the first call to [nextOutput], and must be called again
-   * between every subsequent call to [nextOutput].
+   * This method must be called before the first call to [processActions], and must be called again
+   * between every subsequent call to [processActions].
    */
   fun nextRendering(): RenderingAndSnapshot<RenderingT> {
     val rendering = rootNode.render(workflow, currentProps)
@@ -62,9 +68,53 @@ internal class WorkflowRunner<PropsT, OutputT, RenderingT>(
     return RenderingAndSnapshot(rendering, snapshot)
   }
 
-  // Tick _might_ return an output, but if it returns null, it means the state or a child
-  // probably changed, so we should re-render/snapshot and emit again.
-  suspend fun nextOutput(): WorkflowOutput<OutputT>? = select {
+  /**
+   * Stop processing and go to render on 1 of 3 conditions:
+   * 1. Props have changed.
+   * 2. tick produces an Output to be handled.
+   * 3. The frame 'times out'.
+   */
+  suspend fun processActions(): WorkflowOutput<OutputT>? {
+    // First we block and wait until there is an action to process.
+    var processingResult: ActionProcessingResult? = select {
+      onPropsUpdated()
+      // Tick the workflow tree.
+      rootNode.tick(this)
+    }
+
+    if (runtimeConfig.processMultipleActions) {
+      val frameStartTime = currentTimeMillis()
+
+      var frameTimeLeft = runtimeConfig.frameTimeoutMs
+      // Then we can process any more actions queued up until a max frame timeout when we should
+      // pass off something to the UI!
+      while (processingResult == null && frameTimeLeft > 0) {
+        processingResult = select {
+          // N.B. that select clauses use declaration order to break ties, so the timeout goes first.
+          onTimeout(timeMillis = frameTimeLeft) frameTimeout@{
+            // return FrameTimeout so we know that it's high time to render now!
+            FrameTimeout
+          }
+          onPropsUpdated()
+          // Tick the workflow tree.
+          rootNode.tick(this)
+        }
+        val loopTime = currentTimeMillis()
+        frameTimeLeft = (frameStartTime + runtimeConfig.frameTimeoutMs) - loopTime
+      }
+    }
+
+    @Suppress("UNCHECKED_CAST")
+    return when (processingResult) {
+      PropsUpdated -> null
+      FrameTimeout -> null
+      else -> {
+        processingResult as WorkflowOutput<OutputT>?
+      }
+    }
+  }
+
+  private fun SelectBuilder<ActionProcessingResult?>.onPropsUpdated() {
     // Stop trying to read from the inputs channel after it's closed.
     if (!propsChannel.isClosedForReceive) {
       propsChannel.onReceiveCatching { channelResult ->
@@ -74,13 +124,10 @@ internal class WorkflowRunner<PropsT, OutputT, RenderingT>(
             currentProps = newProps
           }
         }
-        // Return null to tell the caller to do another render pass, but not emit an output.
-        return@onReceiveCatching null
+        // Return PropsUpdated to tell the caller to do another render pass, but not emit an output.
+        return@onReceiveCatching PropsUpdated
       }
     }
-
-    // Tick the workflow tree.
-    rootNode.tick(this)
   }
 
   fun cancelRuntime(cause: CancellationException? = null) {
