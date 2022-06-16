@@ -5,6 +5,7 @@ plugins {
   `kotlin-multiplatform`
   id("org.jetbrains.dokka")
   id("org.jetbrains.kotlinx.benchmark")
+  id("app.cash.molecule")
 }
 
 apply(from = rootProject.file(".buildscript/configure-maven-publish.gradle"))

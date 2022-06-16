@@ -133,6 +133,8 @@ public fun <PropsT, OutputT, RenderingT> renderWorkflowIn(
     }
   )
 
+  scope.launchMolecule {}
+
   scope.launch {
     while (isActive) {
       // It might look weird to start by consuming the output before getting the rendering below,
